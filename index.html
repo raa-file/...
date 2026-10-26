@@ -104,6 +104,23 @@ a{color:var(--teal)}
 .login input,.tlogin input{background:var(--bg);border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;color:var(--text);min-width:0;width:100%}
 .login input:focus,.tlogin input:focus{border-color:var(--teal);outline:none}
 .who{font-size:18px;margin:0 0 4px}
+.gate{display:flex;justify-content:center;padding-top:40px;padding-bottom:40px}
+.gate-card{width:100%;max-width:520px;background:var(--bg2);border:1px solid var(--line);border-radius:24px;padding:32px 28px;text-align:center}
+.gate-ic{width:64px;height:64px;margin:0 auto 8px;color:var(--teal)}
+.gate-ic svg{width:100%;height:100%}
+.gate-card h1{font-size:clamp(30px,6vw,40px)}
+.gate-tag{color:var(--teal);font-weight:600;margin:6px 0 10px}
+.gate-note{color:var(--muted);font-size:15.5px;max-width:42ch;margin:0 auto 18px}
+.gate-form{display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:right}
+.gate-form label{display:flex;flex-direction:column;gap:5px;font-size:14px;color:var(--muted)}
+.gate-form label:first-child,.gate-form .btn{grid-column:1 / -1}
+.gate-form input{background:var(--bg);border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;color:var(--text);min-width:0;width:100%;font-size:16px}
+.gate-form input:focus{border-color:var(--teal);outline:none}
+.gate-form .btn{margin-top:4px;padding:14px}
+.gate-msg{color:var(--gold2);min-height:1.5em;margin:12px 0 0;font-size:15px}
+.gate-help{text-align:right;border-top:1px solid var(--line);margin-top:14px;padding-top:14px;font-size:14px;color:var(--muted)}
+.gate-help p{margin:0 0 6px}
+.gate-help b{color:var(--text)}
 .sync{font-size:14px;color:var(--teal);margin:0}
 .sync[data-s="offline"],.sync[data-s="auth"]{color:var(--gold2)}
 .tlogin{display:flex;gap:8px;flex-wrap:wrap;max-width:420px;margin-top:12px}
@@ -845,19 +862,26 @@ async function rpc(fn, args){
   let r;
   try{
     r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {method:'POST', headers:{apikey:SB_KEY, Authorization:'Bearer ' + SB_KEY, 'Content-Type':'application/json'}, body:JSON.stringify(args)});
-  }catch(e){ const er = new Error('offline'); er.code = ''; throw er; }
+  }catch(e){ const er = new Error('offline'); er.code = 'offline'; throw er; }
   const t = await r.text(); let j = null; try{ j = t ? JSON.parse(t) : null; }catch(e){}
-  if(!r.ok){ const er = new Error((j && j.message) || ('http_' + r.status)); er.code = (j && j.message) || ('http_' + r.status); throw er; }
+  if(!r.ok){
+    let code = (j && j.message) || ('http_' + r.status);
+    if((j && j.code === 'PGRST202') || /Could not find the function/i.test(code)) code = 'not_setup';
+    else if(r.status === 401 || /api key|JWT/i.test(code)) code = 'bad_key';
+    const er = new Error(code); er.code = code; er.raw = j; throw er;
+  }
   return j;
 }
 const ERR = {
   wrong_pin:'الرمز السري غير صحيح لهذا الاسم والفصل. إذا نسيتِه اطلبي من المعلمة إعادة تعيينه.',
   invalid_pin:'الرمز السري يجب أن يكون من ٤ إلى ٨ أرقام.',
   invalid_name:'اكتبي الاسم بشكل صحيح.',
-  wrong_teacher_pin:'رمز المعلمة غير صحيح.'
+  wrong_teacher_pin:'رمز المعلمة غير صحيح.',
+  not_setup:'قاعدة البيانات غير مُعدّة بعد: شغّلي ملف supabase-setup.sql في SQL Editor ثم حاولي مرة أخرى.',
+  bad_key:'مفتاح الاتصال بقاعدة البيانات غير صحيح. تواصلي مع مصممة الموقع.'
 };
 const errMsg = e => ERR[e.code] || 'تعذّر الاتصال بقاعدة البيانات. تحققي من الإنترنت وحاولي مرة أخرى.';
-const isServerReject = e => e.code && !/^http_/.test(e.code);
+const isServerReject = e => e.code && !/^http_/.test(e.code) && !['not_setup','bad_key','offline'].includes(e.code);
 
 let syncState = 'ok', pushTimer = null, pushing = false;
 const SYNC_LABEL = {ok:'☁️ تقدّمك محفوظ ويظهر على أي جهاز', saving:'⏳ جارٍ الحفظ…', offline:'⚠️ لا يوجد اتصال، سيُحفظ تقدّمك تلقائيًا عند عودة الإنترنت', auth:'⚠️ تعذّر التحقق من الرمز، سجّلي الخروج ثم الدخول من جديد'};
@@ -1032,6 +1056,7 @@ function route(){
   const [v, id] = h.split('/');
   closeDrawer(true);
   document.querySelectorAll('[data-nav]').forEach(a => a.removeAttribute('aria-current'));
+  if(!DB.session && v !== 'teacher'){ currentCase = null; renderLogin(); window.scrollTo(0,0); return; }
   if(v === 'case' && CASE[id]){ currentCase = id; renderCase(); document.querySelector('[data-nav="home"]').setAttribute('aria-current','page'); }
   else if(v === 'certs'){ currentCase = null; renderCerts(); document.querySelector('[data-nav="certs"]').setAttribute('aria-current','page'); }
   else if(v === 'cert' && (CASE[id] || id === 'all')){ currentCase = null; certId = id; renderCertPage(); document.querySelector('[data-nav="certs"]').setAttribute('aria-current','page'); }
@@ -1050,6 +1075,29 @@ function caseStatus(id){
   if(p && (p.maxStage > 0 || p.qs.some(q => q.att > 0))) return {k:'progress', best, p};
   if(best) return {k:'solved', best, p};
   return {k:'new', best, p};
+}
+function renderLogin(msg){
+  cancelAnimationFrame(lensRAF);
+  $('#app').innerHTML = `<div class="wrap gate">
+    <div class="gate-card">
+      <div class="gate-ic" aria-hidden="true">${ICON.logo}</div>
+      <h1>مُحقِّقة العلوم 🔎</h1>
+      <p class="gate-tag">اقرئي الأدلة، حلّلي المعلومات، واكتشفي الحقيقة!</p>
+      <p class="gate-note">سجّلي دخولك لتبدئي التحقيق. يُحفظ تقدّمك ونقاطك وشهاداتك، وتكملين من أي جهاز بنفس البيانات.</p>
+      <form class="gate-form" onsubmit="return false">
+        <label><span>الاسم الثنائي</span><input id="lg-name" maxlength="40" autocomplete="off" placeholder="مثل: سارة أحمد"></label>
+        <label><span>الفصل</span><input id="lg-cls" maxlength="30" autocomplete="off" placeholder="مثل: ٢/٣"></label>
+        <label><span>الرمز السري</span><input id="lg-pin" type="password" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="من ٤ إلى ٨ أرقام"></label>
+        <button class="btn btn-primary" data-act="login" type="submit">ادخلي وابدئي التحقيق</button>
+      </form>
+      <p id="gate-msg" class="gate-msg" role="alert">${msg || ''}</p>
+      <div class="gate-help">
+        <p><b>أول مرة؟</b> اكتبي اسمك وفصلك، واختاري رمزًا سريًا تحفظينه. يُنشأ حسابك تلقائيًا.</p>
+        <p><b>على جهاز آخر؟</b> اكتبي الاسم والفصل والرمز نفسها بالضبط، وسيظهر تقدّمك.</p>
+        <p><b>نسيتِ الرمز؟</b> اطلبي من معلمتك تعيين رمز جديد لك.</p>
+      </div>
+    </div>
+  </div>`;
 }
 function renderHome(){
   const s = me();
@@ -1679,20 +1727,20 @@ document.addEventListener('click', e => {
     case 'login': {
       const btn = el; btn.disabled = true; btn.textContent = 'جارٍ الدخول…';
       studentLogin($('#lg-name').value, $('#lg-cls').value, $('#lg-pin').value)
-        .then(() => { toast(`مرحبًا يا محققة ${DB.session.name}!`); renderHome(); })
-        .catch(err => { toast(errMsg(err)); btn.disabled = false; btn.textContent = 'ادخلي'; });
+        .then(() => { toast(`مرحبًا يا محققة ${DB.session.name}!`); route(); })
+        .catch(err => { DB.session = null; const m = $('#gate-msg'); if(m) m.textContent = errMsg(err); else toast(errMsg(err)); btn.disabled = false; btn.textContent = 'ادخلي وابدئي التحقيق'; });
       break;
     }
     case 'logout': {
       el.disabled = true;
       pushNow().then(ok => {
-        if(!ok && syncState === 'auth'){ delete DB.students[skey()]; DB.session = null; localSave(); toast('تغيّر رمزك السري، سجّلي الدخول بالرمز الجديد.'); return renderHome(); }
+        if(!ok && syncState === 'auth'){ delete DB.students[skey()]; DB.session = null; localSave(); toast('تغيّر رمزك السري، سجّلي الدخول بالرمز الجديد.'); return route(); }
         if(!ok){ el.disabled = false; return modal(`<h3>لم تُحفظ آخر التغييرات</h3><p>لا يوجد اتصال بالإنترنت الآن، لذلك لم يُرفع آخر تقدّم لك. إذا خرجتِ سيبقى محفوظًا على هذا الجهاز ويُرفع عند دخولك مرة أخرى منه.</p><div class="row" style="justify-content:flex-end"><button class="btn btn-line-ink" data-act="close-modal">البقاء</button><button class="btn btn-ink" data-act="logout-force">اخرجي على أي حال</button></div>`); }
-        delete DB.students[skey()]; DB.session = null; localSave(); toast('سُجّل خروجك. تقدّمك محفوظ ويمكنك الدخول من أي جهاز.'); renderHome();
+        delete DB.students[skey()]; DB.session = null; localSave(); toast('سُجّل خروجك. تقدّمك محفوظ ويمكنك الدخول من أي جهاز.'); location.hash = '#/'; route();
       });
       break;
     }
-    case 'logout-force': DB.session = null; localSave(); closeModal(); renderHome(); break;
+    case 'logout-force': DB.session = null; localSave(); closeModal(); location.hash = '#/'; route(); break;
     case 'save-name2': {
       const v = $('#nm2').value.trim(); if(!v) return toast('اكتبي الاسم أولًا.');
       setName(v);
